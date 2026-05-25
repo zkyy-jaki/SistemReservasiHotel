@@ -188,33 +188,29 @@ public class LoginView extends JFrame {
             loginView.loginButton.setEnabled(false);
             loginView.loginButton.setText("Memeriksa...");
 
-            new Thread() {
-                @Override
-                public void run() {
-                    try {
-                        boolean success = loginController.login(loginView.getUsername(),
-                                loginView.getPassword());
-                        SwingUtilities.invokeLater(() -> {
-                            if (success) {
-                                loginView.dispose();
-                                openDashboard(loginController);
-                                return;
-                            }
+            LoginThread loginThread = new LoginThread(
+                    loginController,
+                    loginView.getUsername(),
+                    loginView.getPassword(),
+                    (success) -> {
+                        if (success) {
+                            loginView.dispose();
+                            openDashboard(loginController);
+                            return;
+                        }
 
-                            loginView.showError("Username atau password salah.");
-                            loginView.clearPassword();
-                            loginView.loginButton.setEnabled(true);
-                            loginView.loginButton.setText("Masuk");
-                        });
-                    } catch (Exception ex) {
-                        SwingUtilities.invokeLater(() -> {
-                            loginView.showError("Terjadi kesalahan: " + ex.getMessage());
-                            loginView.loginButton.setEnabled(true);
-                            loginView.loginButton.setText("Masuk");
-                        });
+                        loginView.showError("Username atau password salah.");
+                        loginView.clearPassword();
+                        loginView.loginButton.setEnabled(true);
+                        loginView.loginButton.setText("Masuk");
+                    },
+                    (errorMsg) -> {
+                        loginView.showError("Terjadi kesalahan: " + errorMsg);
+                        loginView.loginButton.setEnabled(true);
+                        loginView.loginButton.setText("Masuk");
                     }
-                }
-            }.start();
+            );
+            loginThread.start();
         });
     }
 
@@ -259,5 +255,38 @@ public class LoginView extends JFrame {
 
             configureLogin(loginView, loginController);
         });
+    }
+
+  
+    private static class LoginThread extends Thread {
+
+        private final LoginController loginController;
+        private final String username;
+        private final String password;
+        private final java.util.function.Consumer<Boolean> onResult;
+        private final java.util.function.Consumer<String> onError;
+
+        public LoginThread(LoginController loginController,
+                           String username,
+                           String password,
+                           java.util.function.Consumer<Boolean> onResult,
+                           java.util.function.Consumer<String> onError) {
+            super("LoginThread");
+            this.loginController = loginController;
+            this.username = username;
+            this.password = password;
+            this.onResult = onResult;
+            this.onError = onError;
+        }
+
+        @Override
+        public void run() {
+            try {
+                boolean success = loginController.login(username, password);
+                SwingUtilities.invokeLater(() -> onResult.accept(success));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> onError.accept(e.getMessage()));
+            }
+        }
     }
 }

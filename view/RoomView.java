@@ -222,33 +222,24 @@ public class RoomView extends JFrame {
 
     private void loadRoomsFromDatabase() {
         roomTable.setEnabled(false);
-        new Thread() {
-            @Override
-            public void run() {
-                try {
-                    List<Room> rooms = roomController.getAllRooms();
-                    SwingUtilities.invokeLater(() -> {
-                        clearTable();
-                        for (Room room : rooms) {
-                            addRowToTable(new Object[]{
-                                room.getRoomNumber(),
-                                room.getRoomType(),
-                                room.getPrice(),
-                                room.getStatus()
-                            });
-                        }
-                    });
-                } catch (Exception e) {
-                    SwingUtilities.invokeLater(() -> {
-                        showError("Gagal memuat data kamar: " + e.getMessage());
-                    });
-                } finally {
-                    SwingUtilities.invokeLater(() -> {
-                        roomTable.setEnabled(true);
-                    });
-                }
-            }
-        }.start();
+        LoadRoomsThread loadThread = new LoadRoomsThread(
+                roomController,
+                null,
+                (rooms) -> {
+                    clearTable();
+                    for (Room room : rooms) {
+                        addRowToTable(new Object[]{
+                            room.getRoomNumber(),
+                            room.getRoomType(),
+                            room.getPrice(),
+                            room.getStatus()
+                        });
+                    }
+                },
+                (errorMsg) -> showError("Gagal memuat data kamar: " + errorMsg),
+                () -> roomTable.setEnabled(true)
+        );
+        loadThread.start();
     }
 
     private Room buildRoomFromForm() {
@@ -285,31 +276,22 @@ public class RoomView extends JFrame {
             Room room = buildRoomFromForm();
             addButton.setEnabled(false);
 
-            new Thread() {
-                @Override
-                public void run() {
-                    try {
-                        boolean success = roomController.addRoom(room);
-                        SwingUtilities.invokeLater(() -> {
-                            if (success) {
-                                showMessage("Kamar berhasil ditambahkan.");
-                                loadRoomsFromDatabase();
-                                clearForm();
-                            } else {
-                                showError("Kamar gagal ditambahkan. Periksa nomor kamar atau koneksi database.");
-                            }
-                        });
-                    } catch (Exception e) {
-                        SwingUtilities.invokeLater(() -> {
-                            showError("Terjadi kesalahan: " + e.getMessage());
-                        });
-                    } finally {
-                        SwingUtilities.invokeLater(() -> {
-                            addButton.setEnabled(true);
-                        });
-                    }
-                }
-            }.start();
+            AddRoomThread addThread = new AddRoomThread(
+                    roomController,
+                    room,
+                    (success) -> {
+                        if (success) {
+                            showMessage("Kamar berhasil ditambahkan.");
+                            loadRoomsFromDatabase();
+                            clearForm();
+                        } else {
+                            showError("Kamar gagal ditambahkan. Periksa nomor kamar atau koneksi database.");
+                        }
+                    },
+                    (errorMsg) -> showError("Terjadi kesalahan: " + errorMsg),
+                    () -> addButton.setEnabled(true)
+            );
+            addThread.start();
         } catch (IllegalArgumentException e) {
             showError(e.getMessage());
         }
@@ -329,31 +311,23 @@ public class RoomView extends JFrame {
             Room room = buildRoomFromForm();
             updateButton.setEnabled(false);
 
-            new Thread() {
-                @Override
-                public void run() {
-                    try {
-                        boolean success = roomController.updateRoom(originalRoomNumber, room);
-                        SwingUtilities.invokeLater(() -> {
-                            if (success) {
-                                showMessage("Kamar berhasil diupdate.");
-                                loadRoomsFromDatabase();
-                                clearForm();
-                            } else {
-                                showError("Kamar gagal diupdate. Kamar yang sudah punya reservasi tidak bisa sembarang diubah.");
-                            }
-                        });
-                    } catch (Exception e) {
-                        SwingUtilities.invokeLater(() -> {
-                            showError("Terjadi kesalahan: " + e.getMessage());
-                        });
-                    } finally {
-                        SwingUtilities.invokeLater(() -> {
-                            updateButton.setEnabled(true);
-                        });
-                    }
-                }
-            }.start();
+            UpdateRoomThread updateThread = new UpdateRoomThread(
+                    roomController,
+                    originalRoomNumber,
+                    room,
+                    (success) -> {
+                        if (success) {
+                            showMessage("Kamar berhasil diupdate.");
+                            loadRoomsFromDatabase();
+                            clearForm();
+                        } else {
+                            showError("Kamar gagal diupdate. Kamar yang sudah punya reservasi tidak bisa sembarang diubah.");
+                        }
+                    },
+                    (errorMsg) -> showError("Terjadi kesalahan: " + errorMsg),
+                    () -> updateButton.setEnabled(true)
+            );
+            updateThread.start();
         } catch (IllegalArgumentException e) {
             showError(e.getMessage());
         }
@@ -375,31 +349,22 @@ public class RoomView extends JFrame {
         }
 
         deleteButton.setEnabled(false);
-        new Thread() {
-            @Override
-            public void run() {
-                try {
-                    boolean success = roomController.deleteRoom(roomNumber);
-                    SwingUtilities.invokeLater(() -> {
-                        if (success) {
-                            showMessage("Kamar berhasil dihapus.");
-                            loadRoomsFromDatabase();
-                            clearForm();
-                        } else {
-                            showError("Kamar gagal dihapus. Kamar yang sudah punya reservasi masih terikat data reservasi.");
-                        }
-                    });
-                } catch (Exception e) {
-                    SwingUtilities.invokeLater(() -> {
-                        showError("Terjadi kesalahan: " + e.getMessage());
-                    });
-                } finally {
-                    SwingUtilities.invokeLater(() -> {
-                        deleteButton.setEnabled(true);
-                    });
-                }
-            }
-        }.start();
+        DeleteRoomThread deleteThread = new DeleteRoomThread(
+                roomController,
+                roomNumber,
+                (success) -> {
+                    if (success) {
+                        showMessage("Kamar berhasil dihapus.");
+                        loadRoomsFromDatabase();
+                        clearForm();
+                    } else {
+                        showError("Kamar gagal dihapus. Kamar yang sudah punya reservasi masih terikat data reservasi.");
+                    }
+                },
+                (errorMsg) -> showError("Terjadi kesalahan: " + errorMsg),
+                () -> deleteButton.setEnabled(true)
+        );
+        deleteThread.start();
     }
 
     private void fillFormFromSelectedRow() {
@@ -517,5 +482,155 @@ public class RoomView extends JFrame {
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(RoomView::new);
+    }
+
+    private static class LoadRoomsThread extends Thread {
+
+        private final RoomController roomController;
+        private final Runnable onBeforeStart;
+        private final java.util.function.Consumer<List<Room>> onSuccess;
+        private final java.util.function.Consumer<String> onError;
+        private final Runnable onFinally;
+
+        public LoadRoomsThread(RoomController roomController,
+                               Runnable onBeforeStart,
+                               java.util.function.Consumer<List<Room>> onSuccess,
+                               java.util.function.Consumer<String> onError,
+                               Runnable onFinally) {
+            super("LoadRoomsThread");
+            this.roomController = roomController;
+            this.onBeforeStart = onBeforeStart;
+            this.onSuccess = onSuccess;
+            this.onError = onError;
+            this.onFinally = onFinally;
+        }
+
+        @Override
+        public void run() {
+            if (onBeforeStart != null) {
+                SwingUtilities.invokeLater(onBeforeStart);
+            }
+
+            try {
+                List<Room> rooms = roomController.getAllRooms();
+                SwingUtilities.invokeLater(() -> onSuccess.accept(rooms));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> onError.accept(e.getMessage()));
+            } finally {
+                if (onFinally != null) {
+                    SwingUtilities.invokeLater(onFinally);
+                }
+            }
+        }
+    }
+
+    private static class AddRoomThread extends Thread {
+
+        private final RoomController roomController;
+        private final Room room;
+        private final java.util.function.Consumer<Boolean> onResult;
+        private final java.util.function.Consumer<String> onError;
+        private final Runnable onFinally;
+
+        public AddRoomThread(RoomController roomController,
+                             Room room,
+                             java.util.function.Consumer<Boolean> onResult,
+                             java.util.function.Consumer<String> onError,
+                             Runnable onFinally) {
+            super("AddRoomThread");
+            this.roomController = roomController;
+            this.room = room;
+            this.onResult = onResult;
+            this.onError = onError;
+            this.onFinally = onFinally;
+        }
+
+        @Override
+        public void run() {
+            try {
+                boolean success = roomController.addRoom(room);
+                SwingUtilities.invokeLater(() -> onResult.accept(success));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> onError.accept(e.getMessage()));
+            } finally {
+                if (onFinally != null) {
+                    SwingUtilities.invokeLater(onFinally);
+                }
+            }
+        }
+    }
+
+    
+    private static class UpdateRoomThread extends Thread {
+
+        private final RoomController roomController;
+        private final String originalRoomNumber;
+        private final Room room;
+        private final java.util.function.Consumer<Boolean> onResult;
+        private final java.util.function.Consumer<String> onError;
+        private final Runnable onFinally;
+
+        public UpdateRoomThread(RoomController roomController,
+                                String originalRoomNumber,
+                                Room room,
+                                java.util.function.Consumer<Boolean> onResult,
+                                java.util.function.Consumer<String> onError,
+                                Runnable onFinally) {
+            super("UpdateRoomThread");
+            this.roomController = roomController;
+            this.originalRoomNumber = originalRoomNumber;
+            this.room = room;
+            this.onResult = onResult;
+            this.onError = onError;
+            this.onFinally = onFinally;
+        }
+
+        @Override
+        public void run() {
+            try {
+                boolean success = roomController.updateRoom(originalRoomNumber, room);
+                SwingUtilities.invokeLater(() -> onResult.accept(success));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> onError.accept(e.getMessage()));
+            } finally {
+                if (onFinally != null) {
+                    SwingUtilities.invokeLater(onFinally);
+                }
+            }
+        }
+    }
+
+    private static class DeleteRoomThread extends Thread {
+        private final RoomController roomController;
+        private final String roomNumber;
+        private final java.util.function.Consumer<Boolean> onResult;
+        private final java.util.function.Consumer<String> onError;
+        private final Runnable onFinally;
+        public DeleteRoomThread(RoomController roomController,
+                                String roomNumber,
+                                java.util.function.Consumer<Boolean> onResult,
+                                java.util.function.Consumer<String> onError,
+                                Runnable onFinally) {
+            super("DeleteRoomThread");
+            this.roomController = roomController;
+            this.roomNumber = roomNumber;
+            this.onResult = onResult;
+            this.onError = onError;
+            this.onFinally = onFinally;
+        }
+
+        @Override
+        public void run() {
+            try {
+                boolean success = roomController.deleteRoom(roomNumber);
+                SwingUtilities.invokeLater(() -> onResult.accept(success));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> onError.accept(e.getMessage()));
+            } finally {
+                if (onFinally != null) {
+                    SwingUtilities.invokeLater(onFinally);
+                }
+            }
+        }
     }
 }

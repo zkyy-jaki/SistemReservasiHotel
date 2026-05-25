@@ -228,30 +228,21 @@ public class DashboardView extends JFrame {
     }
 
     public final void refreshStatistics() {
-        new Thread() {
-            @Override
-            public void run() {
-                try {
-                    int[] stats = new int[] {
-                        roomController.countAllRooms(),
-                        roomController.countRoomsByStatus("Booked"),
-                        roomController.countRoomsByStatus("Available"),
-                        reservationController.countAllReservations()
-                    };
-                    SwingUtilities.invokeLater(() -> {
-                        setTotalRooms(stats[0]);
-                        setBookedRooms(stats[1]);
-                        setAvailableRooms(stats[2]);
-                        setTotalReservations(stats[3]);
-                    });
-                } catch (Exception e) {
-                    SwingUtilities.invokeLater(() -> {
-                        e.printStackTrace();
-                        showMessage("Gagal memuat statistik: " + e.getMessage());
-                    });
+        RefreshStatisticsThread statsThread = new RefreshStatisticsThread(
+                roomController,
+                reservationController,
+                (stats) -> {
+                    setTotalRooms(stats[0]);
+                    setBookedRooms(stats[1]);
+                    setAvailableRooms(stats[2]);
+                    setTotalReservations(stats[3]);
+                },
+                (errorMsg) -> {
+                    System.err.println(errorMsg);
+                    showMessage("Gagal memuat statistik: " + errorMsg);
                 }
-            }
-        }.start();
+        );
+        statsThread.start();
     }
 
     public void setDashboardListener(ActionListener listener) {
@@ -276,5 +267,40 @@ public class DashboardView extends JFrame {
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(DashboardView::new);
+    }
+
+    
+    private static class RefreshStatisticsThread extends Thread {
+
+        private final RoomController roomController;
+        private final ReservationController reservationController;
+        private final java.util.function.Consumer<int[]> onSuccess;
+        private final java.util.function.Consumer<String> onError;
+
+        public RefreshStatisticsThread(RoomController roomController,
+                                       ReservationController reservationController,
+                                       java.util.function.Consumer<int[]> onSuccess,
+                                       java.util.function.Consumer<String> onError) {
+            super("RefreshStatisticsThread");
+            this.roomController = roomController;
+            this.reservationController = reservationController;
+            this.onSuccess = onSuccess;
+            this.onError = onError;
+        }
+
+        @Override
+        public void run() {
+            try {
+                int[] stats = new int[]{
+                    roomController.countAllRooms(),
+                    roomController.countRoomsByStatus("Booked"),
+                    roomController.countRoomsByStatus("Available"),
+                    reservationController.countAllReservations()
+                };
+                SwingUtilities.invokeLater(() -> onSuccess.accept(stats));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> onError.accept(e.getMessage()));
+            }
+        }
     }
 }

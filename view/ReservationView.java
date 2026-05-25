@@ -252,22 +252,14 @@ public class ReservationView extends JFrame {
     private void performSearch() {
         searchButton.setEnabled(false);
         String query = getSearchQuery();
-        new javax.swing.SwingWorker<List<Reservation>, Void>() {
-            @Override
-            protected List<Reservation> doInBackground() throws Exception {
-                return reservationController.searchReservations(query);
-            }
-            @Override
-            protected void done() {
-                try {
-                    loadReservations(get());
-                } catch (Exception ex) {
-                    showError("Pencarian gagal: " + ex.getMessage());
-                } finally {
-                    searchButton.setEnabled(true);
-                }
-            }
-        }.execute();
+        SearchReservationsThread searchThread = new SearchReservationsThread(
+                reservationController,
+                query,
+                (results) -> loadReservations(results),
+                (errorMsg) -> showError("Pencarian gagal: " + errorMsg),
+                () -> searchButton.setEnabled(true)
+        );
+        searchThread.start();
     }
 
     private void loadRoomOptions() {
@@ -275,47 +267,31 @@ public class ReservationView extends JFrame {
         roomComboBox.addItem("Loading...");
         roomComboBox.setEnabled(false);
 
-        new javax.swing.SwingWorker<List<Room>, Void>() {
-            @Override
-            protected List<Room> doInBackground() throws Exception {
-                return roomController.getAvailableRooms();
-            }
-            @Override
-            protected void done() {
-                try {
+        LoadRoomOptionsThread loadRoomThread = new LoadRoomOptionsThread(
+                roomController,
+                (rooms) -> {
                     roomComboBox.removeAllItems();
                     roomComboBox.addItem("");
-                    for (Room room : get()) {
+                    for (Room room : rooms) {
                         roomComboBox.addItem(room.getRoomNumber()
                                 + " - " + room.getRoomType());
                     }
-                } catch (Exception ex) {
-                    showError("Gagal memuat kamar: " + ex.getMessage());
-                } finally {
-                    roomComboBox.setEnabled(true);
-                }
-            }
-        }.execute();
+                },
+                (errorMsg) -> showError("Gagal memuat kamar: " + errorMsg),
+                () -> roomComboBox.setEnabled(true)
+        );
+        loadRoomThread.start();
     }
 
     private void loadReservationsFromDatabase() {
         reservationTable.setEnabled(false);
-        new javax.swing.SwingWorker<List<Reservation>, Void>() {
-            @Override
-            protected List<Reservation> doInBackground() throws Exception {
-                return reservationController.getAllReservations();
-            }
-            @Override
-            protected void done() {
-                try {
-                    loadReservations(get());
-                } catch (Exception ex) {
-                    showError("Gagal memuat reservasi: " + ex.getMessage());
-                } finally {
-                    reservationTable.setEnabled(true);
-                }
-            }
-        }.execute();
+        LoadReservationsThread loadResThread = new LoadReservationsThread(
+                reservationController,
+                (reservations) -> loadReservations(reservations),
+                (errorMsg) -> showError("Gagal memuat reservasi: " + errorMsg),
+                () -> reservationTable.setEnabled(true)
+        );
+        loadResThread.start();
     }
 
     private void loadReservations(List<Reservation> reservations) {
@@ -405,22 +381,18 @@ public class ReservationView extends JFrame {
             }
 
             setTotalPrice("Menghitung...");
-            new javax.swing.SwingWorker<Double, Void>() {
-                @Override
-                protected Double doInBackground() throws Exception {
-                    return reservationController.calculateTotalPrice(
-                            roomNumber, checkIn, checkOut);
-                }
-                @Override
-                protected void done() {
-                    try {
-                        setTotalPrice(UITheme.money(get()));
-                    } catch (Exception ex) {
+            CalculatePriceThread calcThread = new CalculatePriceThread(
+                    reservationController,
+                    roomNumber,
+                    checkIn,
+                    checkOut,
+                    (price) -> setTotalPrice(UITheme.money(price)),
+                    (errorMsg) -> {
                         setTotalPrice("");
-                        if (showErrors) showError(ex.getMessage());
+                        if (showErrors) showError(errorMsg);
                     }
-                }
-            }.execute();
+            );
+            calcThread.start();
 
         } catch (IllegalArgumentException e) {
             setTotalPrice("");
@@ -435,25 +407,12 @@ public class ReservationView extends JFrame {
             Reservation partialRes = buildPartialReservationFromForm();
             addButton.setEnabled(false);
 
-            new javax.swing.SwingWorker<Boolean, Void>() {
-                @Override
-                protected Boolean doInBackground() throws Exception {
-                    double totalPrice = reservationController.calculateTotalPrice(
-                            partialRes.getRoom().getRoomNumber(), 
-                            partialRes.getCheckInDate(), 
-                            partialRes.getCheckOutDate());
-                    if (totalPrice <= 0) throw new IllegalArgumentException("Total harga gagal dihitung.");
-                    
-                    Room room = roomController.getRoomByNumber(partialRes.getRoom().getRoomNumber());
-                    if (room != null) partialRes.setRoom(room);
-                    partialRes.setTotalPrice(totalPrice);
-
-                    return reservationController.addReservation(partialRes);
-                }
-                @Override
-                protected void done() {
-                    try {
-                        if (get()) {
+            AddReservationThread addResThread = new AddReservationThread(
+                    reservationController,
+                    roomController,
+                    partialRes,
+                    (success) -> {
+                        if (success) {
                             showMessage("Reservasi berhasil ditambahkan.");
                             loadRoomOptions();
                             loadReservationsFromDatabase();
@@ -461,13 +420,11 @@ public class ReservationView extends JFrame {
                         } else {
                             showError("Reservasi gagal ditambahkan. Kamar mungkin sudah tidak tersedia.");
                         }
-                    } catch (Exception e) {
-                        showError("Terjadi kesalahan: " + e.getMessage());
-                    } finally {
-                        addButton.setEnabled(true);
-                    }
-                }
-            }.execute();
+                    },
+                    (errorMsg) -> showError("Terjadi kesalahan: " + errorMsg),
+                    () -> addButton.setEnabled(true)
+            );
+            addResThread.start();
         } catch (IllegalArgumentException e) {
             showError(e.getMessage());
         }
@@ -486,25 +443,12 @@ public class ReservationView extends JFrame {
             partialRes.getCustomer().setId((int) tableModel.getValueAt(selectedRow, 1));
             updateButton.setEnabled(false);
 
-            new javax.swing.SwingWorker<Boolean, Void>() {
-                @Override
-                protected Boolean doInBackground() throws Exception {
-                    double totalPrice = reservationController.calculateTotalPrice(
-                            partialRes.getRoom().getRoomNumber(), 
-                            partialRes.getCheckInDate(), 
-                            partialRes.getCheckOutDate());
-                    if (totalPrice <= 0) throw new IllegalArgumentException("Total harga gagal dihitung.");
-                    
-                    Room room = roomController.getRoomByNumber(partialRes.getRoom().getRoomNumber());
-                    if (room != null) partialRes.setRoom(room);
-                    partialRes.setTotalPrice(totalPrice);
-
-                    return reservationController.updateReservation(partialRes);
-                }
-                @Override
-                protected void done() {
-                    try {
-                        if (get()) {
+            UpdateReservationThread updateResThread = new UpdateReservationThread(
+                    reservationController,
+                    roomController,
+                    partialRes,
+                    (success) -> {
+                        if (success) {
                             showMessage("Reservasi berhasil diupdate.");
                             loadRoomOptions();
                             loadReservationsFromDatabase();
@@ -512,13 +456,11 @@ public class ReservationView extends JFrame {
                         } else {
                             showError("Reservasi gagal diupdate. Periksa kamar dan tanggal.");
                         }
-                    } catch (Exception e) {
-                        showError("Terjadi kesalahan: " + e.getMessage());
-                    } finally {
-                        updateButton.setEnabled(true);
-                    }
-                }
-            }.execute();
+                    },
+                    (errorMsg) -> showError("Terjadi kesalahan: " + errorMsg),
+                    () -> updateButton.setEnabled(true)
+            );
+            updateResThread.start();
         } catch (IllegalArgumentException e) {
             showError(e.getMessage());
         }
@@ -537,15 +479,11 @@ public class ReservationView extends JFrame {
         if (confirm != JOptionPane.YES_OPTION) return;
 
         deleteButton.setEnabled(false);
-        new javax.swing.SwingWorker<Boolean, Void>() {
-            @Override
-            protected Boolean doInBackground() throws Exception {
-                return reservationController.deleteReservation(reservationId);
-            }
-            @Override
-            protected void done() {
-                try {
-                    if (get()) {
+        DeleteReservationThread deleteResThread = new DeleteReservationThread(
+                reservationController,
+                reservationId,
+                (success) -> {
+                    if (success) {
                         showMessage("Reservasi berhasil dihapus.");
                         loadRoomOptions();
                         loadReservationsFromDatabase();
@@ -553,13 +491,11 @@ public class ReservationView extends JFrame {
                     } else {
                         showError("Reservasi gagal dihapus.");
                     }
-                } catch (Exception e) {
-                    showError("Terjadi kesalahan: " + e.getMessage());
-                } finally {
-                    deleteButton.setEnabled(true);
-                }
-            }
-        }.execute();
+                },
+                (errorMsg) -> showError("Terjadi kesalahan: " + errorMsg),
+                () -> deleteButton.setEnabled(true)
+        );
+        deleteResThread.start();
     }
 
     private void fillFormFromSelectedRow() {
@@ -720,5 +656,292 @@ public class ReservationView extends JFrame {
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(ReservationView::new);
+    }
+
+    
+    private static class LoadReservationsThread extends Thread {
+
+        private final ReservationController reservationController;
+        private final java.util.function.Consumer<List<Reservation>> onSuccess;
+        private final java.util.function.Consumer<String> onError;
+        private final Runnable onFinally;
+
+        public LoadReservationsThread(ReservationController reservationController,
+                                      java.util.function.Consumer<List<Reservation>> onSuccess,
+                                      java.util.function.Consumer<String> onError,
+                                      Runnable onFinally) {
+            super("LoadReservationsThread");
+            this.reservationController = reservationController;
+            this.onSuccess = onSuccess;
+            this.onError = onError;
+            this.onFinally = onFinally;
+        }
+
+        @Override
+        public void run() {
+            try {
+                List<Reservation> reservations = reservationController.getAllReservations();
+                SwingUtilities.invokeLater(() -> onSuccess.accept(reservations));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> onError.accept(e.getMessage()));
+            } finally {
+                if (onFinally != null) {
+                    SwingUtilities.invokeLater(onFinally);
+                }
+            }
+        }
+    }
+
+   
+    private static class SearchReservationsThread extends Thread {
+
+        private final ReservationController reservationController;
+        private final String query;
+        private final java.util.function.Consumer<List<Reservation>> onSuccess;
+        private final java.util.function.Consumer<String> onError;
+        private final Runnable onFinally;
+
+        public SearchReservationsThread(ReservationController reservationController,
+                                        String query,
+                                        java.util.function.Consumer<List<Reservation>> onSuccess,
+                                        java.util.function.Consumer<String> onError,
+                                        Runnable onFinally) {
+            super("SearchReservationsThread");
+            this.reservationController = reservationController;
+            this.query = query;
+            this.onSuccess = onSuccess;
+            this.onError = onError;
+            this.onFinally = onFinally;
+        }
+
+        @Override
+        public void run() {
+            try {
+                List<Reservation> results = reservationController.searchReservations(query);
+                SwingUtilities.invokeLater(() -> onSuccess.accept(results));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> onError.accept(e.getMessage()));
+            } finally {
+                if (onFinally != null) {
+                    SwingUtilities.invokeLater(onFinally);
+                }
+            }
+        }
+    }
+
+        private static class LoadRoomOptionsThread extends Thread {
+
+        private final RoomController roomController;
+        private final java.util.function.Consumer<List<Room>> onSuccess;
+        private final java.util.function.Consumer<String> onError;
+        private final Runnable onFinally;
+
+        public LoadRoomOptionsThread(RoomController roomController,
+                                      java.util.function.Consumer<List<Room>> onSuccess,
+                                      java.util.function.Consumer<String> onError,
+                                      Runnable onFinally) {
+            super("LoadRoomOptionsThread");
+            this.roomController = roomController;
+            this.onSuccess = onSuccess;
+            this.onError = onError;
+            this.onFinally = onFinally;
+        }
+
+        @Override
+        public void run() {
+            try {
+                List<Room> rooms = roomController.getAvailableRooms();
+                SwingUtilities.invokeLater(() -> onSuccess.accept(rooms));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> onError.accept(e.getMessage()));
+            } finally {
+                if (onFinally != null) {
+                    SwingUtilities.invokeLater(onFinally);
+                }
+            }
+        }
+    }
+
+ 
+    private static class CalculatePriceThread extends Thread {
+
+        private final ReservationController reservationController;
+        private final String roomNumber;
+        private final LocalDate checkIn;
+        private final LocalDate checkOut;
+        private final java.util.function.Consumer<Double> onSuccess;
+        private final java.util.function.Consumer<String> onError;
+
+        public CalculatePriceThread(ReservationController reservationController,
+                                    String roomNumber,
+                                    LocalDate checkIn,
+                                    LocalDate checkOut,
+                                    java.util.function.Consumer<Double> onSuccess,
+                                    java.util.function.Consumer<String> onError) {
+            super("CalculatePriceThread");
+            this.reservationController = reservationController;
+            this.roomNumber = roomNumber;
+            this.checkIn = checkIn;
+            this.checkOut = checkOut;
+            this.onSuccess = onSuccess;
+            this.onError = onError;
+        }
+
+        @Override
+        public void run() {
+            try {
+                double totalPrice = reservationController.calculateTotalPrice(
+                        roomNumber, checkIn, checkOut);
+                SwingUtilities.invokeLater(() -> onSuccess.accept(totalPrice));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> onError.accept(e.getMessage()));
+            }
+        }
+    }
+
+   
+    private static class AddReservationThread extends Thread {
+
+        private final ReservationController reservationController;
+        private final RoomController roomController;
+        private final Reservation reservation;
+        private final java.util.function.Consumer<Boolean> onResult;
+        private final java.util.function.Consumer<String> onError;
+        private final Runnable onFinally;
+
+        public AddReservationThread(ReservationController reservationController,
+                                    RoomController roomController,
+                                    Reservation reservation,
+                                    java.util.function.Consumer<Boolean> onResult,
+                                    java.util.function.Consumer<String> onError,
+                                    Runnable onFinally) {
+            super("AddReservationThread");
+            this.reservationController = reservationController;
+            this.roomController = roomController;
+            this.reservation = reservation;
+            this.onResult = onResult;
+            this.onError = onError;
+            this.onFinally = onFinally;
+        }
+
+        @Override
+        public void run() {
+            try {
+                double totalPrice = reservationController.calculateTotalPrice(
+                        reservation.getRoom().getRoomNumber(),
+                        reservation.getCheckInDate(),
+                        reservation.getCheckOutDate());
+                if (totalPrice <= 0) {
+                    throw new IllegalArgumentException("Total harga gagal dihitung.");
+                }
+
+                Room room = roomController.getRoomByNumber(
+                        reservation.getRoom().getRoomNumber());
+                if (room != null) {
+                    reservation.setRoom(room);
+                }
+                reservation.setTotalPrice(totalPrice);
+
+                boolean success = reservationController.addReservation(reservation);
+                SwingUtilities.invokeLater(() -> onResult.accept(success));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> onError.accept(e.getMessage()));
+            } finally {
+                if (onFinally != null) {
+                    SwingUtilities.invokeLater(onFinally);
+                }
+            }
+        }
+    }
+
+   
+    private static class UpdateReservationThread extends Thread {
+
+        private final ReservationController reservationController;
+        private final RoomController roomController;
+        private final Reservation reservation;
+        private final java.util.function.Consumer<Boolean> onResult;
+        private final java.util.function.Consumer<String> onError;
+        private final Runnable onFinally;
+
+        public UpdateReservationThread(ReservationController reservationController,
+                                       RoomController roomController,
+                                       Reservation reservation,
+                                       java.util.function.Consumer<Boolean> onResult,
+                                       java.util.function.Consumer<String> onError,
+                                       Runnable onFinally) {
+            super("UpdateReservationThread");
+            this.reservationController = reservationController;
+            this.roomController = roomController;
+            this.reservation = reservation;
+            this.onResult = onResult;
+            this.onError = onError;
+            this.onFinally = onFinally;
+        }
+
+        @Override
+        public void run() {
+            try {
+                double totalPrice = reservationController.calculateTotalPrice(
+                        reservation.getRoom().getRoomNumber(),
+                        reservation.getCheckInDate(),
+                        reservation.getCheckOutDate());
+                if (totalPrice <= 0) {
+                    throw new IllegalArgumentException("Total harga gagal dihitung.");
+                }
+
+                Room room = roomController.getRoomByNumber(
+                        reservation.getRoom().getRoomNumber());
+                if (room != null) {
+                    reservation.setRoom(room);
+                }
+                reservation.setTotalPrice(totalPrice);
+
+                boolean success = reservationController.updateReservation(reservation);
+                SwingUtilities.invokeLater(() -> onResult.accept(success));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> onError.accept(e.getMessage()));
+            } finally {
+                if (onFinally != null) {
+                    SwingUtilities.invokeLater(onFinally);
+                }
+            }
+        }
+    }
+
+        private static class DeleteReservationThread extends Thread {
+
+        private final ReservationController reservationController;
+        private final int reservationId;
+        private final java.util.function.Consumer<Boolean> onResult;
+        private final java.util.function.Consumer<String> onError;
+        private final Runnable onFinally;
+
+        public DeleteReservationThread(ReservationController reservationController,
+                                        int reservationId,
+                                        java.util.function.Consumer<Boolean> onResult,
+                                        java.util.function.Consumer<String> onError,
+                                        Runnable onFinally) {
+            super("DeleteReservationThread");
+            this.reservationController = reservationController;
+            this.reservationId = reservationId;
+            this.onResult = onResult;
+            this.onError = onError;
+            this.onFinally = onFinally;
+        }
+
+        @Override
+        public void run() {
+            try {
+                boolean success = reservationController.deleteReservation(reservationId);
+                SwingUtilities.invokeLater(() -> onResult.accept(success));
+            } catch (Exception e) {
+                SwingUtilities.invokeLater(() -> onError.accept(e.getMessage()));
+            } finally {
+                if (onFinally != null) {
+                    SwingUtilities.invokeLater(onFinally);
+                }
+            }
+        }
     }
 }
